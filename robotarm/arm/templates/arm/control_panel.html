@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Robot Arm Control Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    .row { display: flex; align-items: center; margin-bottom: 8px; gap: 12px; }
+    input[type=range] { width: 300px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px;}
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    th { background: #f5f5f5; }
+    .btn { padding: 6px 12px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>Robot Arm Control Panel</h2>
+
+  <div id="sliders"></div>
+  <div class="row">
+    <input id="poseName" placeholder="Pose name (optional)"/>
+    <button class="btn" onclick="resetSliders()">Reset</button>
+    <button class="btn" onclick="savePose()">Save Pose</button>
+    <button class="btn" onclick="runPose()">Run</button>
+  </div>
+
+  <h3>Saved Poses</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Motor 1</th><th>Motor 2</th><th>Motor 3</th>
+        <th>Motor 4</th><th>Motor 5</th><th>Motor 6</th><th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in poses %}
+      <tr data-id="{{p.id}}">
+        <td>{{forloop.counter}}</td>
+        <td>{{p.m1}}</td><td>{{p.m2}}</td><td>{{p.m3}}</td>
+        <td>{{p.m4}}</td><td>{{p.m5}}</td><td>{{p.m6}}</td>
+        <td>
+          <button class="btn" onclick="loadPose({{p.id}})">Load</button>
+          <button class="btn" onclick="removePose({{p.id}})">Remove</button>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8">No poses yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <script>
+    // --- Build 6 sliders ---
+    const slidersDiv = document.getElementById('sliders');
+    const motors = [1,2,3,4,5,6];
+    const values = {};
+    motors.forEach(i => {
+      values['m'+i] = 90;
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `
+        <label style="width:70px">Motor ${i}:</label>
+        <input type="range" id="m${i}" min="0" max="180" value="90"
+               oninput="document.getElementById('v${i}').textContent=this.value; values.m${i}=parseInt(this.value)">
+        <span id="v${i}">90</span>`;
+      slidersDiv.appendChild(row);
+    });
+
+    function resetSliders(){
+      motors.forEach(i=>{
+        const s = document.getElementById('m'+i);
+        s.value = 90;
+        document.getElementById('v'+i).textContent = 90;
+        values['m'+i] = 90;
+      });
+    }
+
+    // CSRF helper (for fetch POSTs from the page)
+    function getCookie(name) {
+      const v = document.cookie.split('; ').find(row => row.startsWith(name+'='));
+      return v ? decodeURIComponent(v.split('=')[1]) : null;
+    }
+    const csrftoken = getCookie('csrftoken');
+
+    async function savePose(){
+      const body = {...values, name: document.getElementById('poseName').value};
+      const r = await fetch('/api/pose/save/', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRFToken':csrftoken},
+        body: JSON.stringify(body)
+      });
+      const j = await r.json();
+      if(j.ok){ location.reload(); }
+    }
+
+    async function runPose(){
+      const r = await fetch('/api/pose/run/', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRFToken':csrftoken},
+        body: JSON.stringify(values)
+      });
+      const j = await r.json();
+      if(j.ok){ alert('Run command queued with id '+j.command_id); }
+    }
+
+    async function loadPose(id){
+      const r = await fetch(`/api/pose/${id}/load/`);
+      const p = await r.json();
+      [1,2,3,4,5,6].forEach(i=>{
+        document.getElementById('m'+i).value = p['m'+i];
+        document.getElementById('v'+i).textContent = p['m'+i];
+        values['m'+i] = p['m'+i];
+      });
+    }
+
+    async function removePose(id){
+      const r = await fetch(`/api/pose/${id}/delete/`, {
+        method:'POST', headers:{'X-CSRFToken':csrftoken}
+      });
+      const j = await r.json();
+      if(j.ok){ location.reload(); }
+    }
+  </script>
+</body>
+</html>
